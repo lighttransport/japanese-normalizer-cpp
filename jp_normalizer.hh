@@ -35,6 +35,8 @@ std::string normalize(const std::string& str,
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
+#include <array>
+#include <vector>
 
 namespace jpnormalizer {
 
@@ -43,6 +45,7 @@ namespace jpnormalizer {
 #pragma clang diagnostic ignored "-Wexit-time-destructors"
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 #endif
+
 
 static std::unordered_map<std::string, char> sASCII{
     {"ａ", 'a'}, {"ｂ", 'b'}, {"ｃ", 'c'}, {"ｄ", 'd'}, {"ｅ", 'e'},
@@ -103,7 +106,7 @@ static std::unordered_map<std::string, std::string> sParenthesizedIdeographs = {
     {"㈼", "(監)"}, {"㈽", "(企)"}, {"㈾", "(資)"}, {"㈿", "(協)"},
     {"㉀", "(祭)"}, {"㉁", "(休)"}, {"㉂", "(自)"}, {"㉃", "(至)"}};
 
-static std::unordered_set<std::string> sHIPHENS = {"˗", "֊", "‐", "‑", "‒",
+static std::unordered_set<std::string> sHYPHENS = {"˗", "֊", "‐", "‑", "‒",
                                                    "–", "⁃", "⁻", "₋", "−"};
 
 static std::unordered_set<std::string> sCHOONPUS = {"﹣", "－", "ｰ", "—",
@@ -591,8 +594,47 @@ inline std::string extract_utf8_char(const std::string& str, uint32_t start_i,
   }
 }
 
+inline uint32_t to_code(const std::string &c) {
+
+  if (c.size() > 4) {
+    // ???
+    return ~0u;
+  }
+
+  uint32_t code{0};
+  for (size_t i = 0; i < c.size(); i++) {
+    code += (uint32_t(c[i]) << i);
+  }
+
+  return code;
+}
+
+inline bool is_cjk_code(const std::string &c) {
+
+  std::array<uint32_t, 2> char_codes[5] = {
+    {19968, 40960},  // CJK UNIFIED IDEOGRAPHS
+    {12352, 12448},  // HIRAGANA
+    {12448, 12544},  // KATAKANA
+    {12289, 12352},  // CJK SYMBOLS AND PUNCTUATION
+    {65280, 65520}   // HALFWIDTH AND FULLWIDTH FORMS
+  };
+
+
+  uint32_t code = to_code(c);
+
+  for (size_t i = 0; i < 5; i++) {
+    if ((code >= char_codes[i][0]) && (code <= char_codes[i][1])) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 std::string normalize(const std::string& str,
                       const NormalizationOption option) {
+
+
   (void)option;
 
   if (str.empty()) {
@@ -601,6 +643,8 @@ std::string normalize(const std::string& str,
 
   uint64_t sz = str.size();
   std::cout << "buf len = " << sz << "\n";
+
+  std::vector<std::string> utf8_chars;
 
   for (size_t i = 0; i <= sz;) {
     int len=0;
@@ -612,19 +656,54 @@ std::string normalize(const std::string& str,
 
     i += uint64_t(len);
     std::cout << i << ", " << len << ", " << s << "\n";
+    utf8_chars.push_back(s);
   }
 
   std::string dst_str;
+  std::vector<std::string> utf8_buf;
+  utf8_buf.resize(utf8_chars.size() + 1);
 
-#if 0
-  // TODO: endian
-  detail::StreamReader sr = detail::StreamReader(reinterpret_cast<const uint8_t *>(&str[0]), sz, /* endian_swap */false);
+  std::string prev_c = "\n";
+  bool latin_space = false;
+  size_t loc = 0;
 
+  for (size_t i =0 ; i < utf8_chars.size(); i++) {
+    std::string c = utf8_chars[i];
+    if (sSPACE.count(c)) {
+      if (((prev_c == " ") || is_cjk_code(prev_c)) && (option.remove_space)) {
+          continue;
+      } else if ((prev_c != "*") && (loc > 0) && (to_code(prev_c) < 127)) {
+        latin_space = true;
+        utf8_buf[loc] = c;
+      } else if (option.remove_space) {
+        loc -= 1;
+      } else {
+        utf8_buf[loc] = c;
+      }
+    } else {
+      if (sHYPHENS.count(c)) {
+        // TODO
+      } else if (sCHOONPUS.count(c)) {
+        // TODO
+      } else if (sTILDES.count(c)) {
+        // TODO
+      } else {
+        // TODO
+      }
+    }
 
-  if (!detail::normalize_str(sr, option, &dst_str)) {
-    return std::string();
+    prev_c = c;
+    loc += 1;
   }
-#endif
+
+  if (loc > 0) {
+    if (utf8_buf[loc-1] == " ") {
+      loc -= 1;
+    }
+    utf8_buf[loc] = "\0";
+  }
+
+  // TODO: to std::string
 
   return dst_str;
 }
