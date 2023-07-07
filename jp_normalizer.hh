@@ -48,6 +48,7 @@ namespace jpnormalizer {
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 #endif
 
+
 static std::unordered_map<std::string, char> sASCII{
     {"ａ", 'a'}, {"ｂ", 'b'}, {"ｃ", 'c'}, {"ｄ", 'd'}, {"ｅ", 'e'},
     {"ｆ", 'f'}, {"ｇ", 'g'}, {"ｈ", 'h'}, {"ｉ", 'i'}, {"ｊ", 'j'},
@@ -214,21 +215,19 @@ inline bool is_cjk_char(const std::string &s) {
 
 }  // namespace detail
 
-
 std::string normalize(const std::string& str,
                       const NormalizationOption option) {
-  (void)option;
 
   if (str.empty()) {
     return std::string();
   }
 
-  std::vector<std::string> utf8_chars;
-
   ///
   /// Decompose input string into UTF8 char list.
   ///
   uint64_t sz = str.size();
+  std::vector<std::string> utf8_chars;
+
   for (size_t i = 0; i <= sz;) {
     int len=0;
     std::string s = detail::extract_utf8_char(str, uint32_t(i), len);
@@ -286,6 +285,12 @@ std::string normalize(const std::string& str,
     }
 
     loc++;
+  }
+
+  std::string dst_str;
+  // simply concat chars.
+  for (size_t i = 0; i < loc; i++) {
+    dst_str += dst_buf[i];
   }
 
   return dst_str;
