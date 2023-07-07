@@ -1,11 +1,9 @@
 # Header-only Japanese text normalizer in C++11
 
-Japanese text normalizer written in portable C++11, based on neologdn.
-
-Its good to embed Japanese normalization feature to your LLM(Large Language Model) apps.
-(e.g. llama.cpp https://github.com/ggerganov/llama.cpp )
-
-日本語はこちら [README-ja.md](README-ja.md)
+C++11 記述のシンプルな日本語テキスト正規化ライブラリです.
+正規化のルールは neologdn を参考にしています.
+unicodedata.normalize や sentencepiece normalizer のように完全な機能は有しておりませんが,
+llama.cpp https://github.com/ggerganov/llama.cpp など LLM アプリに組み込んで使うなどのユースケースでは十分な機能を有していると思います.
 
 ## Rules
 
@@ -36,14 +34,16 @@ std::string normalized_text = jpnormalizer::normalize(text, options);
 
 ## Limitation
 
-Default up to 2GB text.
+1 文章(string) 2GB までになります.
+
 You can set this limit in NormalizationOptions;
+
 T.B.W.
 
 ## Security
 
-`jp_normalizer.hh` is tested on LLVM fuzzer.
-No security issue(segfault, OOM) at the moment.
+`jp_normalizer.hh` は LLVM fuzzer でテストしています.
+現状, 範囲外アクセスなどは見つかっていません.
 
 ## TODO
 
