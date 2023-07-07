@@ -284,6 +284,7 @@ std::string normalize(const std::string& str,
 
     }
 
+    prev_c = c;
     loc++;
   }
 
