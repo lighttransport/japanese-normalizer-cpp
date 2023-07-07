@@ -13,7 +13,7 @@ struct NormalizationOption {
   enum class TildeMode {
     Remove,     // remove tilde
     Ignore,     // ignore(do nothing) for tilde char.
-    Normzlize,  // convert to ASCII '~'
+    Normalize,  // convert to ASCII '~'
     Zenkaku,    // convert to Zenkaku '〜'
   };
 
@@ -176,13 +176,26 @@ inline uint32_t utf8_code(const std::string &s) {
 
   uint32_t code = 0;
   if (s.size() == 1) {
-    code = s[0] & 0xff;
+    unsigned char s0 = static_cast<unsigned char>(s[0]);
+    code = uint32_t(s0) & 0x7f;
   } else if (s.size() == 2) {
-    code = ((uint32_t(s[0]) & 0xff) << 1) | (s[1] & 0xff);
+    // 11bit: 110y-yyyx	10xx-xxxx
+    unsigned char s0 = static_cast<unsigned char>(s[0]);
+    unsigned char s1 = static_cast<unsigned char>(s[1]);
+    code = (uint32_t(s0 & 0x1f) << 6) | (s1 & 0x3f);
   } else if (s.size() == 3) {
-    code = ((uint32_t(s[0]) & 0xff) << 2) | ((uint32_t(s[1]) & 0xff) << 1) | (s[2] & 0xff);
+    // 16bit: 1110-yyyy	10yx-xxxx	10xx-xxxx
+    unsigned char s0 = static_cast<unsigned char>(s[0]);
+    unsigned char s1 = static_cast<unsigned char>(s[1]);
+    unsigned char s2 = static_cast<unsigned char>(s[2]);
+    code = (uint32_t(s0 & 0xf) << 12) | (uint32_t(s1 & 0x3f) << 6) | (s2 & 0x3f);
   } else {
-    code = ((uint32_t(s[0]) & 0xff) << 3) | ((uint32_t(s[1]) & 0xff) << 2) | ((uint32_t(s[2]) & 0xff) << 1) | (s[3] & 0xff);
+    // 21bit: 1111-0yyy	10yy-xxxx	10xx-xxxx	10xx-xxxx
+    unsigned char s0 = static_cast<unsigned char>(s[0]);
+    unsigned char s1 = static_cast<unsigned char>(s[1]);
+    unsigned char s2 = static_cast<unsigned char>(s[2]);
+    unsigned char s3 = static_cast<unsigned char>(s[3]);
+    code = (uint32_t(s0 & 0x7) << 18) | (uint32_t(s1 & 0x3f) << 12) | (uint32_t(s2 & 0x3f) << 6) | uint32_t(s3 & 0x3f);
   }
 
   return code;
@@ -212,6 +225,38 @@ inline bool is_cjk_char(const std::string &s) {
 
   return false;
 }
+
+// TODO
+/*
+cpdef unicode shorten_repeat(unicode text, int repeat_threshould, int max_repeat_substr_length=8):
+    cdef int text_length, i, repeat_length, right_start, right_end, num_repeat_substrs
+    cdef int upper_repeat_substr_length
+    cdef unicode substr, right_substr
+
+    i = 0
+    while i < len(text):
+        text_length = len(text)
+
+        upper_repeat_substr_length = (text_length - i) // 2
+        if max_repeat_substr_length and max_repeat_substr_length < upper_repeat_substr_length:
+            upper_repeat_substr_length = max_repeat_substr_length + 1
+
+        for repeat_length in range(1, upper_repeat_substr_length):
+            substr = text[i:i+repeat_length]
+            right_start = i + repeat_length
+            right_end = right_start + repeat_length
+            right_substr = text[right_start:right_end]
+            num_repeat_substrs = 1
+            while substr == right_substr and right_end <= text_length:
+                num_repeat_substrs += 1
+                right_start += repeat_length
+                right_end += repeat_length
+                right_substr = text[right_start:right_end]
+            if num_repeat_substrs > repeat_threshould:
+                text = text[:i+repeat_length*repeat_threshould] + text[i+repeat_length*num_repeat_substrs:]
+        i += 1
+    return text
+*/
 
 }  // namespace detail
 
@@ -253,9 +298,11 @@ std::string normalize(const std::string& str,
 
     if (sSPACE.count(c)) {
       c = " ";
+      //std::cout << "c is space: prev_c = " << prev_c << ", utf8 code " << detail::utf8_code(prev_c) << "\n";
       if (((prev_c == " ") || detail::is_cjk_char(prev_c)) && option.remove_space) {
         continue;
       } else if ((prev_c != "*") && (loc > 0) && (detail::utf8_code(prev_c) < 128)) {
+        //std::cout << "latin space\n";
         latin_space = true;
         if (loc >= dst_buf.size()) {
           // ???
@@ -264,10 +311,11 @@ std::string normalize(const std::string& str,
         dst_buf[loc] = c;
       } else if (option.remove_space) {
         if (loc == 0) {
-          // ???
-          return std::string();
+          prev_c = c; 
+          continue;
+        } else {
+          loc--;
         }
-        loc--;
       } else {
         if (loc >= dst_buf.size()) {
           // ???
@@ -277,22 +325,96 @@ std::string normalize(const std::string& str,
       }
     } else {
       if (sHYPHENS.count(c)) {
+        if (prev_c == "-") {
+          continue;
+        } else {
+          c = "-";
+          dst_buf[loc] = c;
+        }
       } else if (sCHOONPUS.count(c)) {
+        if (prev_c == "ー") { // zenkaku
+          continue;
+        } else {
+          c = "ー";
+          dst_buf[loc] = c;
+        }
       } else if (sTILDES.count(c)) {
-      } else {
-      }
+        if (option.tilde == NormalizationOption::TildeMode::Ignore) {
+          // pass
+        } else if (option.tilde == NormalizationOption::TildeMode::Normalize) {
+          c = "~";
+        } else if (option.tilde == NormalizationOption::TildeMode::Zenkaku) {
+          c = "〜";
+        } else {
+          continue;
+        }
 
+        dst_buf[loc] = c;
+
+      } else {
+
+        if (sASCII.count(c)) {
+          c = sASCII.at(c);
+        } else if (sDIGIT.count(c)) {
+          c = sDIGIT.at(c);
+        } else if (sKANA.count(c)) {
+          c = sKANA.at(c);
+        }
+
+        if ((c == "ﾞ") && (sKANA_TEN.count(prev_c))) {
+          if (loc == 0) {
+            //std::cerr << "b loc = 0\n";
+            return std::string();
+          }
+          loc--; 
+          c = sKANA_TEN.at(prev_c);
+        } else if ((c == "ﾟ") && (sKANA_MARU.count(prev_c))) {
+          if (loc == 0) {
+            //std::cerr << "c loc = 0\n";
+            return std::string();
+          }
+          loc--; 
+          c = sKANA_MARU.at(prev_c);
+        }
+
+        //std::cout << "latin_space " << latin_space << "\n";
+        //std::cout << "is_cjk_char " << detail::is_cjk_char(c) << "\n";
+
+        // TODO: allow all non-latin char?
+        if (latin_space && detail::is_cjk_char(c) && option.remove_space) {
+          //std::cout << "latin space: c = " << c << "\n";
+          if (loc == 0) {
+            return std::string();
+          }
+          loc--; 
+        }
+        
+        latin_space = false;
+        dst_buf[loc] = c;
+      }
     }
 
     prev_c = c;
     loc++;
   }
 
+  if (loc == 0) {
+    // This should not happen though.
+    std::cerr << "e loc = 0\n";
+    return std::string();
+  }
+
+  if (dst_buf[loc-1] == " ") {
+    loc--;
+  }
+  
   std::string dst_str;
   // simply concat chars.
   for (size_t i = 0; i < loc; i++) {
     dst_str += dst_buf[i];
   }
+
+  // TODO: Shorten repeat.
 
   return dst_str;
 }
