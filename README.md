@@ -1,6 +1,7 @@
 # Header-only Japanese text normalizer in C++11
 
-Japanese text normalizer written in portable C++11, based on neologdn.
+Simple Japanese text normalizer written in portable C++11, based on neologdn.
+https://github.com/ikegami-yukino/neologdn
 
 Its good to embed Japanese normalization feature to your LLM(Large Language Model) apps.
 (e.g. llama.cpp https://github.com/ggerganov/llama.cpp )
@@ -23,8 +24,9 @@ https://github.com/neologd/mecab-ipadic-neologd/wiki/Regexp.ja
 #define JP_NORMALIZER_IMPLEMENTATION
 #include "jp_normalizer.hh"
 
-std::string text = "...";
+std::string text = "ﾊﾝｶｸｶﾅ";
 std::string normalized_text = jpnormalizer::normalize(text);
+// => "ハンカクカナ"
 
 // Control normalization using NormalizationOptions
 jpnormalizer::NormaliationOptions options;
@@ -36,17 +38,17 @@ std::string normalized_text = jpnormalizer::normalize(text, options);
 
 ## Limitation
 
-Default up to 2GB text.
+Default up to 1GB tokens(~ 3GB in UTF-8 Japanase character).
 You can set this limit in NormalizationOptions;
-T.B.W.
 
 ## Security
 
 `jp_normalizer.hh` is tested on LLVM fuzzer.
-No security issue(segfault, OOM) at the moment.
+No security issue(segfault, OOM) observed at the moment.
 
 ## TODO
 
+* [ ] Implement shorten repeat feature.
 * [ ] More Enclosed CJK Letters and Months.
 * [ ] wstring(WideChar) support in Windows
 * [ ] UTF-16 text?(e.g. UNICODE UTF-16LE text in Windows)
