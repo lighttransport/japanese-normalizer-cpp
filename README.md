@@ -6,7 +6,7 @@ https://github.com/ikegami-yukino/neologdn
 Its good to embed Japanese normalization feature to your LLM(Large Language Model) apps.
 (e.g. llama.cpp https://github.com/ggerganov/llama.cpp )
 
-日本語はこちら [README-ja.md](README-ja.md)
+C++ STL のみ(and no std::regex) で日本語を正規化するシンプルなライブラリ [README-ja.md](README-ja.md)
 
 ## Rules
 
