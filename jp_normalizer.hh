@@ -21,6 +21,9 @@ struct NormalizationOption {
   uint32_t repeat{0};
   uint32_t max_repeat{8};
   TildeMode tilde{TildeMode::Remove};
+
+  // jpnormalizer specific feature.
+  bool parenthesized_ideographs{true};
 };
 
 std::string normalize(const std::string& str,
@@ -96,6 +99,7 @@ static std::unordered_map<std::string, std::string> sKANA_MARU = {
     {"ハ", "パ"}, {"ヒ", "ピ"}, {"フ", "プ"}, {"ヘ", "ペ"}, {"ホ", "ポ"},
     {"は", "ぱ"}, {"ひ", "ぴ"}, {"ふ", "ぷ"}, {"へ", "ぺ"}, {"ほ", "ぽ"}};
 
+// not in neologdn
 static std::unordered_map<std::string, std::string> sParenthesizedIdeographs = {
     {"㈠", "(一)"}, {"㈡", "(二)"}, {"㈢", "(三)"}, {"㈣", "(四)"},
     {"㈤", "(五)"}, {"㈥", "(六)"}, {"㈦", "(七)"}, {"㈧", "(八)"},
@@ -174,28 +178,45 @@ inline uint32_t utf8_code(const std::string &s) {
     return ~0u; // invalid
   }
 
+  // TODO: endianness
   uint32_t code = 0;
   if (s.size() == 1) {
     unsigned char s0 = static_cast<unsigned char>(s[0]);
+    if (s0 > 0x7f) {
+      return ~0u;
+    }
     code = uint32_t(s0) & 0x7f;
   } else if (s.size() == 2) {
     // 11bit: 110y-yyyx	10xx-xxxx
     unsigned char s0 = static_cast<unsigned char>(s[0]);
     unsigned char s1 = static_cast<unsigned char>(s[1]);
-    code = (uint32_t(s0 & 0x1f) << 6) | (s1 & 0x3f);
+
+    if (((s0 & 0xe0) == 0xc0) && ((s1 & 0xc0) == 0x80)) {
+      code = (uint32_t(s0 & 0x1f) << 6) | (s1 & 0x3f);
+    } else {
+      return ~0u;
+    }
   } else if (s.size() == 3) {
     // 16bit: 1110-yyyy	10yx-xxxx	10xx-xxxx
     unsigned char s0 = static_cast<unsigned char>(s[0]);
     unsigned char s1 = static_cast<unsigned char>(s[1]);
     unsigned char s2 = static_cast<unsigned char>(s[2]);
-    code = (uint32_t(s0 & 0xf) << 12) | (uint32_t(s1 & 0x3f) << 6) | (s2 & 0x3f);
+    if (((s0 & 0xf0) == 0xe0) && ((s1 & 0xc0) == 0x80) && ((s2 & 0xc0) == 0x80)) {
+      code = (uint32_t(s0 & 0xf) << 12) | (uint32_t(s1 & 0x3f) << 6) | (s2 & 0x3f);
+    } else {
+      return ~0u;
+    }
   } else {
     // 21bit: 1111-0yyy	10yy-xxxx	10xx-xxxx	10xx-xxxx
     unsigned char s0 = static_cast<unsigned char>(s[0]);
     unsigned char s1 = static_cast<unsigned char>(s[1]);
     unsigned char s2 = static_cast<unsigned char>(s[2]);
     unsigned char s3 = static_cast<unsigned char>(s[3]);
-    code = (uint32_t(s0 & 0x7) << 18) | (uint32_t(s1 & 0x3f) << 12) | (uint32_t(s2 & 0x3f) << 6) | uint32_t(s3 & 0x3f);
+    if (((s0 & 0xf8) == 0xf0) && ((s1 & 0xc0) == 0x80) && ((s2 & 0xc0) == 0x80) && ((s2 & 0xc0) == 0x80)) {
+      code = (uint32_t(s0 & 0x7) << 18) | (uint32_t(s1 & 0x3f) << 12) | (uint32_t(s2 & 0x3f) << 6) | uint32_t(s3 & 0x3f);
+    } else {
+      return ~0u;
+    }
   }
 
   return code;
@@ -415,6 +436,7 @@ std::string normalize(const std::string& str,
   }
 
   // TODO: Shorten repeat.
+  //
 
   return dst_str;
 }
