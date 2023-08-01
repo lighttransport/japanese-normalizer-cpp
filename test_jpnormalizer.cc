@@ -40,6 +40,7 @@ static void unit_test() {
   CHECK_TEXT("　　　ＰＲＭＬ　　副　読　本　　　", "PRML副読本");
   CHECK_TEXT(" Natural Language Processing ", "Natural Language Processing");
 
+  // FIXME: repat is not implemented yet.
   opt.repeat = 6;
   CHECK_TEXT_OPT("かわいいいいいいいいい", "かわいいいいいい", opt);
 
@@ -57,9 +58,14 @@ static void unit_test() {
   CHECK_TEXT_OPT("1995〜2001年", "19952001年", opt);
   opt = jpnormalizer::NormalizationOption();
   CHECK_TEXT("1995〜2001年", "19952001年");
+
+  // Addtional
+  opt.parenthesized_ideographs = true;
+  CHECK_TEXT_OPT("ﾜｶﾞﾊｲは㈱である", "ワガハイは(株)である", opt);
 }
 
 int main(int argc, char **argv) {
+  jpnormalizer::NormalizationOption opt;
   const auto test_text = u8"ﾜｶﾞﾊｲは㈱である.  ㈴ＭＡＥはまだ迺";
 
   std::string text;
@@ -70,10 +76,11 @@ int main(int argc, char **argv) {
   } else {
     unit_test();
     text = std::string(test_text);
+    opt.parenthesized_ideographs = true;
   }
 
   std::cout << "input: " << text << "\n";
-  std::string normalied_text = jpnormalizer::normalize(text);
+  std::string normalied_text = jpnormalizer::normalize(text, opt);
 
   std::cout << "normalized: " << normalied_text << "\n";
 

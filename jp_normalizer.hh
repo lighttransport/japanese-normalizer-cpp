@@ -17,6 +17,8 @@ struct NormalizationOption {
     Zenkaku,    // convert to Zenkaku '〜'
   };
 
+  uint32_t max_tokens{1024ull*1024ull*1024ull}; // default 1 GB tokens(~= 3GB in Japanese UTF-8 chars)
+
   bool remove_space{true};
   uint32_t repeat{0};
   uint32_t max_repeat{8};
@@ -288,6 +290,10 @@ std::string normalize(const std::string& str,
     return std::string();
   }
 
+  if (str.size() > option.max_tokens) {
+    return std::string();
+  }
+
   ///
   /// Decompose input string into UTF8 char list.
   ///
@@ -332,7 +338,7 @@ std::string normalize(const std::string& str,
         dst_buf[loc] = c;
       } else if (option.remove_space) {
         if (loc == 0) {
-          prev_c = c; 
+          prev_c = c;
           continue;
         } else {
           loc--;
@@ -380,21 +386,27 @@ std::string normalize(const std::string& str,
           c = sDIGIT.at(c);
         } else if (sKANA.count(c)) {
           c = sKANA.at(c);
+        } else {
+          // Additional unicode normalizations
+          if (option.parenthesized_ideographs && sParenthesizedIdeographs.count(c)) {
+            c = sParenthesizedIdeographs.at(c);
+          }
         }
+
 
         if ((c == "ﾞ") && (sKANA_TEN.count(prev_c))) {
           if (loc == 0) {
             //std::cerr << "b loc = 0\n";
             return std::string();
           }
-          loc--; 
+          loc--;
           c = sKANA_TEN.at(prev_c);
         } else if ((c == "ﾟ") && (sKANA_MARU.count(prev_c))) {
           if (loc == 0) {
             //std::cerr << "c loc = 0\n";
             return std::string();
           }
-          loc--; 
+          loc--;
           c = sKANA_MARU.at(prev_c);
         }
 
@@ -407,9 +419,9 @@ std::string normalize(const std::string& str,
           if (loc == 0) {
             return std::string();
           }
-          loc--; 
+          loc--;
         }
-        
+
         latin_space = false;
         dst_buf[loc] = c;
       }
@@ -421,14 +433,14 @@ std::string normalize(const std::string& str,
 
   if (loc == 0) {
     // This should not happen though.
-    std::cerr << "e loc = 0\n";
+    //std::cerr << "e loc = 0\n";
     return std::string();
   }
 
   if (dst_buf[loc-1] == " ") {
     loc--;
   }
-  
+
   std::string dst_str;
   // simply concat chars.
   for (size_t i = 0; i < loc; i++) {

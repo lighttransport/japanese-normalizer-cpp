@@ -1,9 +1,13 @@
 # Header-only Japanese text normalizer in C++11
 
-C++11 記述のシンプルな日本語テキスト正規化ライブラリです.
-正規化のルールは neologdn を参考にしています.
+header-only で C++11 記述のシンプルな日本語テキスト正規化ライブラリです.
+STL 以外の依存ライブラリはありません.
+正規化のルールは neologdn の処理 + alpha になります.
+
 unicodedata.normalize や sentencepiece normalizer のように完全な機能は有しておりませんが,
 llama.cpp https://github.com/ggerganov/llama.cpp など LLM アプリに組み込んで使うなどのユースケースでは十分な機能を有していると思います.
+
+完全な正規化処理が必要な場合は, Python unicodedata.normalize, sentencepiece normalize, ICU https://icu.unicode.org/ を参照ください.
 
 ## Rules
 
@@ -34,11 +38,9 @@ std::string normalized_text = jpnormalizer::normalize(text, options);
 
 ## Limitation
 
-1 文章(string) 2GB までになります.
+1 文章(string) 1 GB token までになります.
 
 You can set this limit in NormalizationOptions;
-
-T.B.W.
 
 ## Security
 
@@ -47,6 +49,7 @@ T.B.W.
 
 ## TODO
 
+* [ ] 繰り返し文字の短縮の実装
 * [ ] More Enclosed CJK Letters and Months.
 * [ ] wstring(WideChar) support in Windows
 * [ ] UTF-16 text?(e.g. UNICODE UTF-16LE text in Windows)
