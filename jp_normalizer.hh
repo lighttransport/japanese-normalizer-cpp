@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 
 namespace jpnormalizer {
 
@@ -28,9 +29,16 @@ struct NormalizationOption {
   bool parenthesized_ideographs{true};
 };
 
+struct DedupNormalizationOption {
+  // Placeholder token for digits
+  char digit_placeholder{'0'};
+};
+
 std::string normalize(const std::string& str,
                       const NormalizationOption option = NormalizationOption());
 
+std::string normalize_for_dedup(const std::string& str,
+                      const DedupNormalizationOption option = DedupNormalizationOption());
 #if defined(WIN32)
 // TODO: wstring version
 #endif
@@ -131,6 +139,91 @@ static std::unordered_set<std::string> sSPACE = {" ", "　"};
 #endif
 
 namespace detail {
+
+    inline uint32_t utf8_len(const uint8_t c) const {
+      if (c <= 127) {
+        // ascii
+        return 1;
+      } else if ((c & 0xE0) == 0xC0) {
+        return 2;
+      } else if ((c & 0xF0) == 0xE0) {
+        return 3;
+      } else if ((c & 0xF8) == 0xF0) {
+        return 4;
+      }
+
+      // invalid
+      return 0;
+    }
+
+
+    uint32_t to_codepoint(const char *s, int &len) {
+      if (!s) {
+        return ~0u;
+      }
+
+      uint32_t char_len = utf8_len(*s);
+
+      uint32_t code = 0;
+      if (char_len == 1) {
+        unsigned char s0 = static_cast<unsigned char>(s[0]);
+        if (s0 > 0x7f) {
+          len = 0;
+          return ~0u;
+        }
+        code = uint32_t(s0) & 0x7f;
+      } else if (char_len == 2) {
+        // 11bit: 110y-yyyx 10xx-xxxx
+        unsigned char s0 = static_cast<unsigned char>(s[0]);
+        unsigned char s1 = static_cast<unsigned char>(s[1]);
+
+        if (((s0 & 0xe0) == 0xc0) && ((s1 & 0xc0) == 0x80)) {
+          code = (uint32_t(s0 & 0x1f) << 6) | (s1 & 0x3f);
+        } else {
+          len = 0;
+          return ~0u;
+        }
+      } else if (char_len == 3) {
+        // 16bit: 1110-yyyy 10yx-xxxx 10xx-xxxx
+        unsigned char s0 = static_cast<unsigned char>(s[0]);
+        unsigned char s1 = static_cast<unsigned char>(s[1]);
+        unsigned char s2 = static_cast<unsigned char>(s[2]);
+        if (((s0 & 0xf0) == 0xe0) && ((s1 & 0xc0) == 0x80) &&
+            ((s2 & 0xc0) == 0x80)) {
+          code =
+              (uint32_t(s0 & 0xf) << 12) | (uint32_t(s1 & 0x3f) << 6) | (s2 & 0x3f);
+        } else {
+          len = 0;
+          return ~0u;
+        }
+      } else if (char_len == 4) {
+        // 21bit: 1111-0yyy 10yy-xxxx 10xx-xxxx 10xx-xxxx
+        unsigned char s0 = static_cast<unsigned char>(s[0]);
+        unsigned char s1 = static_cast<unsigned char>(s[1]);
+        unsigned char s2 = static_cast<unsigned char>(s[2]);
+        unsigned char s3 = static_cast<unsigned char>(s[3]);
+        if (((s0 & 0xf8) == 0xf0) && ((s1 & 0xc0) == 0x80) &&
+            ((s2 & 0xc0) == 0x80) && ((s2 & 0xc0) == 0x80)) {
+          code = (uint32_t(s0 & 0x7) << 18) | (uint32_t(s1 & 0x3f) << 12) |
+                 (uint32_t(s2 & 0x3f) << 6) | uint32_t(s3 & 0x3f);
+        } else {
+          len = 0;
+          return ~0u;
+        }
+      } else {
+        len = 0;
+        return ~0u;
+      }
+
+      len = char_len;
+      return code;
+    }
+
+
+inline std::vector<uint32_t> to_codepoints(const std::string &str)
+{
+
+}
 
 inline std::string extract_utf8_char(const std::string& str, uint32_t start_i,
                                      int& len) {
@@ -281,10 +374,232 @@ cpdef unicode shorten_repeat(unicode text, int repeat_threshould, int max_repeat
     return text
 */
 
+std::vector<uint32_t> shorten_repeat(const std::vector<uint32_t> &u8_codepoints, uint32_t repeat_threshold, uint32_t max_repeat_len=8) {
+
+  std::vector<uint32_t> text = u8_codepoints;
+  size_t i = 0;
+  while (i < text.size()) {
+    size_t text_len = text.size();
+
+    // upper bound of repeat size = 1/2 of input text.
+    size_t ceil_repeat_len = (text_len - i) / 2;
+
+    if (max_repeat_len < ceil_repeat_len) {
+      ceil_repeat_len = max_repeat + 1;
+    }
+
+    for (size_t repeat_len = 1, repeat_len < ceil_repeat; repeat_len++) {
+      std::string subtr = text.substr(i, repeat_len);
+      size_t right_start = i = repeat_len;
+      size_t right_end = right_start + repeat_len;
+
+      std::string right_subtr = text.substr(right_start, repeat_len);
+      size_t num_repeat = 1;
+      while ((substr == right_substr) && (right_end <= text_len)) {
+        num_repeat++;
+
+        right_start += repeat_len;
+        right_end += repeat_len;
+        right_substr = text.substr(right_start, repeat_len);
+      }
+
+      if (num_repeat > repeat_threshould) {
+        std::string text0 = text.substr(0, i*repeat_len*repeat_threshold);
+        std::string text1 = text.substr(i*repeat_len*num_repeat, std::string::npos);
+
+        text = text0 + text1;
+      }
+    }
+
+    i++;
+  }
+
+  return text;
+}
+
 }  // namespace detail
 
 std::string normalize(const std::string& str,
                       const NormalizationOption option) {
+
+  if (str.empty()) {
+    return std::string();
+  }
+
+  if (str.size() > option.max_tokens) {
+    return std::string();
+  }
+
+  ///
+  /// Decompose input string into UTF8 char list.
+  ///
+  uint64_t sz = str.size();
+  std::vector<std::string> utf8_chars;
+
+  for (size_t i = 0; i <= sz;) {
+    int len=0;
+    std::string s = detail::extract_utf8_char(str, uint32_t(i), len);
+    if (len == 0) {
+      // invalid char
+      break;
+    }
+
+    i += uint64_t(len);
+    utf8_chars.push_back(s);
+  }
+
+  std::vector<std::string> dst_buf;
+  // normalized text should not exceed input length.
+  dst_buf.resize(utf8_chars.size());
+
+  std::string prev_c = "\0";
+  bool latin_space = false;
+  uint64_t loc = 0;
+
+  for (size_t i = 0 ; i  < utf8_chars.size(); i++) {
+    std::string c = utf8_chars[i];
+
+    if (sSPACE.count(c)) {
+      c = " ";
+      //std::cout << "c is space: prev_c = " << prev_c << ", utf8 code " << detail::utf8_code(prev_c) << "\n";
+      if (((prev_c == " ") || detail::is_cjk_char(prev_c)) && option.remove_space) {
+        continue;
+      } else if ((prev_c != "*") && (loc > 0) && (detail::utf8_code(prev_c) < 128)) {
+        //std::cout << "latin space\n";
+        latin_space = true;
+        if (loc >= dst_buf.size()) {
+          // ???
+          return std::string();
+        }
+        dst_buf[loc] = c;
+      } else if (option.remove_space) {
+        if (loc == 0) {
+          prev_c = c;
+          continue;
+        } else {
+          loc--;
+        }
+      } else {
+        if (loc >= dst_buf.size()) {
+          // ???
+          return std::string();
+        }
+        dst_buf[loc] = c;
+      }
+    } else {
+      if (sHYPHENS.count(c)) {
+        if (prev_c == "-") {
+          continue;
+        } else {
+          c = "-";
+          dst_buf[loc] = c;
+        }
+      } else if (sCHOONPUS.count(c)) {
+        if (prev_c == "ー") { // zenkaku
+          continue;
+        } else {
+          c = "ー";
+          dst_buf[loc] = c;
+        }
+      } else if (sTILDES.count(c)) {
+        if (option.tilde == NormalizationOption::TildeMode::Ignore) {
+          // pass
+        } else if (option.tilde == NormalizationOption::TildeMode::Normalize) {
+          c = "~";
+        } else if (option.tilde == NormalizationOption::TildeMode::Zenkaku) {
+          c = "〜";
+        } else {
+          continue;
+        }
+
+        dst_buf[loc] = c;
+
+      } else {
+
+        if (sASCII.count(c)) {
+          c = sASCII.at(c);
+        } else if (sDIGIT.count(c)) {
+          c = sDIGIT.at(c);
+        } else if (sKANA.count(c)) {
+          c = sKANA.at(c);
+        } else {
+          // Additional unicode normalizations
+          if (option.parenthesized_ideographs && sParenthesizedIdeographs.count(c)) {
+            c = sParenthesizedIdeographs.at(c);
+          }
+        }
+
+
+        if ((c == "ﾞ") && (sKANA_TEN.count(prev_c))) {
+          if (loc == 0) {
+            //std::cerr << "b loc = 0\n";
+            return std::string();
+          }
+          loc--;
+          c = sKANA_TEN.at(prev_c);
+        } else if ((c == "ﾟ") && (sKANA_MARU.count(prev_c))) {
+          if (loc == 0) {
+            //std::cerr << "c loc = 0\n";
+            return std::string();
+          }
+          loc--;
+          c = sKANA_MARU.at(prev_c);
+        }
+
+        //std::cout << "latin_space " << latin_space << "\n";
+        //std::cout << "is_cjk_char " << detail::is_cjk_char(c) << "\n";
+
+        // TODO: allow all non-latin char?
+        if (latin_space && detail::is_cjk_char(c) && option.remove_space) {
+          //std::cout << "latin space: c = " << c << "\n";
+          if (loc == 0) {
+            return std::string();
+          }
+          loc--;
+        }
+
+        latin_space = false;
+        dst_buf[loc] = c;
+      }
+    }
+
+    prev_c = c;
+    loc++;
+  }
+
+  if (loc == 0) {
+    // This should not happen though.
+    //std::cerr << "e loc = 0\n";
+    return std::string();
+  }
+
+  if (dst_buf[loc-1] == " ") {
+    loc--;
+  }
+
+  std::string dst_str;
+  // simply concat chars.
+  for (size_t i = 0; i < loc; i++) {
+    dst_str += dst_buf[i];
+  }
+
+  // TODO: Shorten repeat.
+  //
+
+  return dst_str;
+}
+
+// replace all digits to a placeholder character
+std::string normalize_for_dedup(const std::string& str,
+                      const DedupNormalizationOption dedup_option) {
+
+  NormalizationOption option;
+  option.tilde = NormalizationOption::TideMode::Remove;
+  option.remove_space = true;
+  option.repeat = 8;
+  option.max_repeat = 8;
+  option.parenthesized_ideographs = true;
+
 
   if (str.empty()) {
     return std::string();
