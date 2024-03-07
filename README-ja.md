@@ -49,7 +49,7 @@ You can set this limit in NormalizationOptions;
 
 ## TODO
 
-* [ ] 繰り返し文字の短縮の実装
+* [x] 繰り返し文字の短縮の実装
 * [ ] More Enclosed CJK Letters and Months.
 * [ ] wstring(WideChar) support in Windows
 * [ ] UTF-16 text?(e.g. UNICODE UTF-16LE text in Windows)

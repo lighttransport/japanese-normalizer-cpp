@@ -48,7 +48,7 @@ No security issue(segfault, OOM) observed at the moment.
 
 ## TODO
 
-* [ ] Implement shorten repeat feature.
+* [x] Implement shorten repeat feature.
 * [ ] More Enclosed CJK Letters and Months.
 * [ ] wstring(WideChar) support in Windows
 * [ ] UTF-16 text?(e.g. UNICODE UTF-16LE text in Windows)

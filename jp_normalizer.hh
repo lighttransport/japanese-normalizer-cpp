@@ -22,7 +22,7 @@ struct NormalizationOption {
 
   bool remove_space{true};
   uint32_t repeat{0};
-  uint32_t max_repeat{8};
+  uint32_t max_repeat_substr_len{8};
   TildeMode tilde{TildeMode::Remove};
 
   // jpnormalizer specific feature.
@@ -134,13 +134,66 @@ static std::unordered_set<std::string> sTILDES = {"~",  "∼",  "∾",
 // TODO: We can simply use direct string comparision for space character.
 static std::unordered_set<std::string> sSPACE = {" ", "　"};
 
+static std::unordered_set<std::string> sUNICODE_PUNCT = {
+    "，",
+    "。",
+    "、",
+    "„"
+    "”",
+    "“",
+    "«",
+    "»",
+    "１",
+    "」",
+    "「",
+    "《",
+    "》",
+    "´",
+    "∶",
+    "：",
+    "？",
+    "！",
+    "（",
+    "）",
+    "；",
+    "–",
+    "—",
+    "．",
+    "～",
+    "’",
+    "…",
+    "━",
+    "〈",
+    "〉",
+    "【",
+    "】",
+    "％",
+    "►",
+    ":",
+    ";",
+    "-",
+    ",",
+    ".",
+    "?",
+    "!",
+    ")",
+    "(",
+    "<",
+    ">",
+    "[",
+    "]",
+    "\"",
+    "'"
+};
+
+
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
 
 namespace detail {
 
-    inline uint32_t utf8_len(const uint8_t c) const {
+    inline uint32_t utf8_len(const uint8_t c) {
       if (c <= 127) {
         // ascii
         return 1;
@@ -157,12 +210,12 @@ namespace detail {
     }
 
 
-    uint32_t to_codepoint(const char *s, int &len) {
+    inline uint32_t to_codepoint(const char *s, uint32_t &len) {
       if (!s) {
         return ~0u;
       }
 
-      uint32_t char_len = utf8_len(*s);
+      uint32_t char_len = utf8_len(uint8_t(*s));
 
       uint32_t code = 0;
       if (char_len == 1) {
@@ -220,9 +273,61 @@ namespace detail {
     }
 
 
+inline std::string codepoint_to_utf8(uint32_t code) {
+  if (code <= 0x7f) {
+    return std::string(1, char(code));
+  } else if (code <= 0x7ff) {
+    // 11bit: 110y-yyyx 10xx-xxxx
+    uint8_t buf[2];
+    buf[0] = uint8_t(((code >> 6) & 0x1f) | 0xc0);
+    buf[1] = uint8_t(((code >> 0) & 0x3f) | 0x80);
+    return std::string(reinterpret_cast<const char *>(&buf[0]), 2);
+  } else if (code <= 0xffff) {
+    // 16bit: 1110-yyyy 10yx-xxxx 10xx-xxxx
+    uint8_t buf[3];
+    buf[0] = uint8_t(((code >> 12) & 0x0f) | 0xe0);
+    buf[1] = uint8_t(((code >>  6) & 0x3f) | 0x80);
+    buf[2] = uint8_t(((code >>  0) & 0x3f) | 0x80);
+    return std::string(reinterpret_cast<const char *>(&buf[0]), 3);
+  } else if (code <= 0x10ffff) {
+    // 21bit: 1111-0yyy 10yy-xxxx 10xx-xxxx 10xx-xxxx
+    uint8_t buf[4];
+    buf[0] = uint8_t(((code >> 18) & 0x07) | 0xF0);
+    buf[1] = uint8_t(((code >> 12) & 0x3F) | 0x80);
+    buf[2] = uint8_t(((code >>  6) & 0x3F) | 0x80);
+    buf[3] = uint8_t(((code >>  0) & 0x3F) | 0x80);
+    return std::string(reinterpret_cast<const char *>(&buf[0]), 4);
+  }
+
+  // invalid
+  return std::string();
+}
+
+
 inline std::vector<uint32_t> to_codepoints(const std::string &str)
 {
+  size_t i = 0;
+  std::vector<uint32_t> codes;
+  while (i < str.size()) {
+    uint32_t len;
+    uint32_t code = to_codepoint(&str[i], len);
 
+    codes.push_back(code);
+    i += len;
+  }
+
+  return codes;
+}
+
+inline std::string codepoints_to_string(const std::vector<uint32_t> &codepoints)
+{
+  std::string ret;
+
+  for (const auto &code : codepoints) {
+    ret += codepoint_to_utf8(code);
+  }
+
+  return ret;
 }
 
 inline std::string extract_utf8_char(const std::string& str, uint32_t start_i,
@@ -342,39 +447,23 @@ inline bool is_cjk_char(const std::string &s) {
   return false;
 }
 
-// TODO
-/*
-cpdef unicode shorten_repeat(unicode text, int repeat_threshould, int max_repeat_substr_length=8):
-    cdef int text_length, i, repeat_length, right_start, right_end, num_repeat_substrs
-    cdef int upper_repeat_substr_length
-    cdef unicode substr, right_substr
 
-    i = 0
-    while i < len(text):
-        text_length = len(text)
+inline bool is_equal(const std::vector<uint32_t> &in,
+  size_t s_pos0, size_t s_pos1, size_t len) {
 
-        upper_repeat_substr_length = (text_length - i) // 2
-        if max_repeat_substr_length and max_repeat_substr_length < upper_repeat_substr_length:
-            upper_repeat_substr_length = max_repeat_substr_length + 1
+  // return false when pos is out-of-range.
+  if ((s_pos0 >= in.size()) ||
+      (s_pos1 >= in.size()) ||
+      ((s_pos0 + len) > in.size()) ||
+      ((s_pos1 + len) > in.size())) {
+    return false;
+  }
 
-        for repeat_length in range(1, upper_repeat_substr_length):
-            substr = text[i:i+repeat_length]
-            right_start = i + repeat_length
-            right_end = right_start + repeat_length
-            right_substr = text[right_start:right_end]
-            num_repeat_substrs = 1
-            while substr == right_substr and right_end <= text_length:
-                num_repeat_substrs += 1
-                right_start += repeat_length
-                right_end += repeat_length
-                right_substr = text[right_start:right_end]
-            if num_repeat_substrs > repeat_threshould:
-                text = text[:i+repeat_length*repeat_threshould] + text[i+repeat_length*num_repeat_substrs:]
-        i += 1
-    return text
-*/
+  return std::equal(std::begin(in) + int64_t(s_pos0), std::begin(in) + int64_t(s_pos0 + len),
+      std::begin(in) + int64_t(s_pos1));
+}
 
-std::vector<uint32_t> shorten_repeat(const std::vector<uint32_t> &u8_codepoints, uint32_t repeat_threshold, uint32_t max_repeat_len=8) {
+static std::vector<uint32_t> shorten_repeat_codepoints(const std::vector<uint32_t> &u8_codepoints, uint32_t repeat_threshold, uint32_t max_repeat_substr_len=8) {
 
   std::vector<uint32_t> text = u8_codepoints;
   size_t i = 0;
@@ -384,30 +473,42 @@ std::vector<uint32_t> shorten_repeat(const std::vector<uint32_t> &u8_codepoints,
     // upper bound of repeat size = 1/2 of input text.
     size_t ceil_repeat_len = (text_len - i) / 2;
 
-    if (max_repeat_len < ceil_repeat_len) {
-      ceil_repeat_len = max_repeat + 1;
+    if (max_repeat_substr_len < ceil_repeat_len) {
+      ceil_repeat_len = max_repeat_substr_len + 1;
     }
 
-    for (size_t repeat_len = 1, repeat_len < ceil_repeat; repeat_len++) {
-      std::string subtr = text.substr(i, repeat_len);
-      size_t right_start = i = repeat_len;
+    for (size_t repeat_len = 1; repeat_len < ceil_repeat_len; repeat_len++) {
+      size_t right_start = i + repeat_len;
       size_t right_end = right_start + repeat_len;
 
-      std::string right_subtr = text.substr(right_start, repeat_len);
       size_t num_repeat = 1;
-      while ((substr == right_substr) && (right_end <= text_len)) {
-        num_repeat++;
+      while (right_end <= text_len) {
+        if (!is_equal(text, i, right_start, repeat_len)) {
+          break;
+        }
 
+        num_repeat++;
         right_start += repeat_len;
         right_end += repeat_len;
-        right_substr = text.substr(right_start, repeat_len);
       }
 
-      if (num_repeat > repeat_threshould) {
-        std::string text0 = text.substr(0, i*repeat_len*repeat_threshold);
-        std::string text1 = text.substr(i*repeat_len*num_repeat, std::string::npos);
+      if (num_repeat > repeat_threshold) {
+        // cut out repeated substr
+#if 0
+        std::vector<uint32_t> buf;
 
-        text = text0 + text1;
+        for (size_t k = 0; k < (std::min)(i + repeat_len * repeat_threshold, text.size()); k++) {
+          buf.push_back(text[k]);
+        }
+
+        for (size_t k = i + repeat_len * num_repeat; k < text.size(); k++) {
+          buf.push_back(text[k]);
+        }
+
+        text.swap(buf);
+#else
+        text.erase(text.begin() + int64_t((std::min)(i + repeat_len * repeat_threshold, text.size())), text.begin() + int64_t(i + repeat_len * num_repeat));
+#endif
       }
     }
 
@@ -416,6 +517,16 @@ std::vector<uint32_t> shorten_repeat(const std::vector<uint32_t> &u8_codepoints,
 
   return text;
 }
+
+static std::string shorten_repeat(const std::string &text, uint32_t repeat_threshold, uint32_t max_repeat_substr_len=8) {
+
+  std::vector<uint32_t> codepoints = to_codepoints(text);
+
+  std::vector<uint32_t> ret = shorten_repeat_codepoints(codepoints, repeat_threshold, max_repeat_substr_len);
+
+  return codepoints_to_string(ret);
+}
+
 
 }  // namespace detail
 
@@ -583,18 +694,20 @@ std::string normalize(const std::string& str,
     dst_str += dst_buf[i];
   }
 
-  // TODO: Shorten repeat.
-  //
+  if (option.repeat > 0) {
+    return detail::shorten_repeat(dst_str, option.repeat, option.max_repeat_substr_len);
+  }
 
   return dst_str;
 }
 
+#if 0 // TODO
 // replace all digits to a placeholder character
 std::string normalize_for_dedup(const std::string& str,
                       const DedupNormalizationOption dedup_option) {
 
   NormalizationOption option;
-  option.tilde = NormalizationOption::TideMode::Remove;
+  option.tilde = NormalizationOption::TildeMode::Remove;
   option.remove_space = true;
   option.repeat = 8;
   option.max_repeat = 8;
@@ -762,11 +875,13 @@ std::string normalize_for_dedup(const std::string& str,
     dst_str += dst_buf[i];
   }
 
-  // TODO: Shorten repeat.
-  //
+  if (option.repeat > 0) {
+    return detail::shorten_repeat(dst_str, option.repeat, option.max_repeat);
+  }
 
   return dst_str;
 }
+#endif
 
 }  // namespace jpnormalizer
 

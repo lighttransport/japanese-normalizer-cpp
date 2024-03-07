@@ -40,7 +40,6 @@ static void unit_test() {
   CHECK_TEXT("　　　ＰＲＭＬ　　副　読　本　　　", "PRML副読本");
   CHECK_TEXT(" Natural Language Processing ", "Natural Language Processing");
 
-  // FIXME: repat is not implemented yet.
   opt.repeat = 6;
   CHECK_TEXT_OPT("かわいいいいいいいいい", "かわいいいいいい", opt);
 
