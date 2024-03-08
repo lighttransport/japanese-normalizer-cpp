@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace jpnormalizer {
 
@@ -39,6 +40,11 @@ std::string normalize(const std::string& str,
 
 std::string normalize_for_dedup(const std::string& str,
                       const DedupNormalizationOption option = DedupNormalizationOption());
+
+std::unordered_set<std::string> get_digits();
+std::unordered_set<std::string> get_digits_and_parentized_ideographs();
+const std::unordered_set<std::string> &get_unicode_puncts();
+
 #if defined(WIN32)
 // TODO: wstring version
 #endif
@@ -882,6 +888,35 @@ std::string normalize_for_dedup(const std::string& str,
   return dst_str;
 }
 #endif
+
+const std::unordered_set<std::string> &get_unicode_puncts() {
+  return sUNICODE_PUNCT;
+}
+
+std::unordered_set<std::string> get_digits() {
+
+  std::unordered_set<std::string> dst;
+
+  for (const auto &it : sDIGIT) {
+    dst.insert(it.first);
+    dst.insert(it.second);
+  }
+
+  return dst;
+}
+
+std::unordered_set<std::string> get_digits_and_parentized_ideographs() {
+
+  std::unordered_set<std::string> dst = get_digits();
+
+  for (const auto &it : sParenthesizedIdeographs) {
+    dst.insert(it.first);
+    dst.insert(it.second);
+  }
+
+  return dst;
+
+}
 
 }  // namespace jpnormalizer
 
