@@ -144,7 +144,7 @@ static std::unordered_set<std::string> sUNICODE_PUNCT = {
     "，",
     "。",
     "、",
-    "„"
+    "„",
     "”",
     "“",
     "«",
